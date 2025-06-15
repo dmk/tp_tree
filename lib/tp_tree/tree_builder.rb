@@ -7,10 +7,11 @@ module TPTree
   class TreeBuilder
     attr_reader :events
 
-    def initialize(&block)
+    def initialize(method_filter: nil, &block)
       @events = []
       @call_depth = 0
       @call_stack = []
+      @method_filter = method_filter
       @block = block
     end
 
@@ -35,6 +36,11 @@ module TPTree
     private
 
     def handle_call(tp)
+      # Apply filtering if a method filter is configured
+      if @method_filter && !@method_filter.should_include?(tp.callee_id, tp.defined_class, tp)
+        return
+      end
+
       param_values = extract_parameters(tp)
 
       call_info = {
@@ -52,6 +58,13 @@ module TPTree
     end
 
     def handle_return(tp)
+      # If method was filtered out during call, there won't be anything on the stack
+      return if @call_stack.empty?
+
+      # Check if this return matches the last call (in case of nested filtered calls)
+      call_info = @call_stack.last
+      return unless call_info && call_info[:method_name] == tp.callee_id
+
       @call_depth -= 1
       call_info = @call_stack.pop
 
