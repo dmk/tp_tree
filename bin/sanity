@@ -1,0 +1,10 @@
+#!/usr/bin/env ruby
+
+$LOAD_PATH.unshift(File.expand_path('../lib', __dir__))
+require 'tp_tree'
+require 'rubygems'
+
+puts "Tracing Gem.configuration..."
+TPTree.catch do
+  Gem.configuration
+end
