@@ -1,0 +1,170 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# == TPTree Oneshot Tracer ==
+#
+# This is a standalone script for tracing method calls using TracePoint.
+# It's designed to be pasted into an IRB session or run directly from the
+# command line. It provides a colorized, tree-like view of method calls.
+#
+# --- Usage ---
+#
+# In IRB:
+#    - Copy and paste the entire TPTree module into your IRB session.
+#    - Then, use it to trace any block of code:
+#      TPTree.catch { Your.code_to_trace }
+#
+
+module TPTree
+  # Formatter provides methods for colorizing and formatting output.
+  module Formatter
+    DEPTH_COLORS = [:green, :blue, :yellow, :magenta, :cyan, :red].freeze
+
+    def colorize(text, color)
+      color_codes = {
+        black: 30, red: 31, green: 32, yellow: 33,
+        blue: 34, magenta: 35, cyan: 36, white: 37
+      }
+      code = color_codes[color] || 37
+      "\e[#{code}m#{text}\e[0m"
+    end
+
+    def format_parameters(parameters)
+      return '' if parameters.nil? || parameters.empty?
+      parameters.map { |param_type, param_name, param_value|
+        case param_type
+        when :req, :opt then "#{param_name} = #{format_value(param_value)}"
+        when :keyreq, :key
+          param_value.nil? ? "#{param_name}:" : "#{param_name} = #{format_value(param_value)}"
+        when :rest then "*#{param_name}"
+        when :keyrest then "**#{param_name}"
+        when :block then "&#{param_name}"
+        else param_name.to_s
+        end
+      }.join(', ')
+    end
+
+    def format_value(value)
+      case value
+      when String then value.inspect
+      when Symbol then ":#{value}"
+      when NilClass then 'nil'
+      when TrueClass, FalseClass then value.to_s
+      when Numeric then value.to_s
+      when Array then "[#{value.map { |v| format_value(v) }.join(', ')}]"
+      when Hash then "{#{value.map { |k, v| "#{format_value(k)} => #{format_value(v)}" }.join(', ')}}"
+      when Proc then 'Proc'
+      else value.inspect
+      end
+    end
+
+    def format_return_value(return_value)
+      format_value(return_value)
+    end
+
+    def color_for_depth(depth)
+      DEPTH_COLORS[depth % DEPTH_COLORS.length]
+    end
+  end
+
+  # TreeNode represents a single event in the method call tree
+  class TreeNode
+    include Formatter
+    attr_reader :event, :method_name, :parameters, :return_value, :depth
+
+    def initialize(event, method_name, parameters = nil, return_value = nil, depth = 0)
+      @event, @method_name, @parameters, @return_value, @depth = event, method_name, parameters, return_value, depth
+    end
+
+    def to_s
+      prefix = build_prefix
+      color = color_for_depth(depth)
+      colored_method_name = colorize(@method_name, color)
+      case @event
+      when :call then "#{prefix}#{colored_method_name}(#{format_parameters(@parameters)})"
+      when :return then "#{prefix}#{format_return_value(@return_value)}"
+      when :call_return then "#{prefix}#{colored_method_name}(#{format_parameters(@parameters)}) → #{format_return_value(@return_value)}"
+      end
+    end
+
+    private
+
+    def build_prefix
+      color = color_for_depth(depth)
+      if @event == :return
+        prefix = ''
+        (0...@depth).each { |level| prefix += colorize('│  ', color_for_depth(level)) }
+        prefix + colorize('└→ ', color)
+      else
+        return '' if @depth == 0
+        prefix = ''
+        (0...@depth).each { |level| prefix += colorize('│  ', color_for_depth(level)) }
+        prefix
+      end
+    end
+  end
+
+  # TreeBuilder uses TracePoint to build a tree of method calls.
+  class TreeBuilder
+    def initialize(&block)
+      @events, @call_depth, @call_stack, @block = [], 0, [], block
+    end
+
+    def build
+      tp = TracePoint.trace(:call, :return) do |tp|
+        next if tp.callee_id == :disable && tp.defined_class == TracePoint
+        tp.event == :call ? handle_call(tp) : handle_return(tp)
+      end
+      @block.call
+      tp.disable
+      @events.compact
+    end
+
+    private
+
+    def handle_call(tp)
+      @call_stack.push({
+        method_name: tp.callee_id,
+        parameters: extract_parameters(tp),
+        depth: @call_depth,
+        event_index: @events.length
+      })
+      @events << nil
+      @call_depth += 1
+    end
+
+    def handle_return(tp)
+      @call_depth -= 1
+      call_info = @call_stack.pop
+      if @events.length > call_info[:event_index] + 1
+        @events[call_info[:event_index]] = TreeNode.new(:call, call_info[:method_name], call_info[:parameters], nil, call_info[:depth])
+        @events << TreeNode.new(:return, tp.callee_id, nil, tp.return_value, @call_depth)
+      else
+        @events[call_info[:event_index]] = TreeNode.new(:call_return, call_info[:method_name], call_info[:parameters], tp.return_value, call_info[:depth])
+      end
+    end
+
+    def extract_parameters(tp)
+      return tp.parameters.map { |type, name| [type, name, nil] } unless tp.binding
+      tp.parameters.map do |param_type, param_name|
+        begin
+          value = case param_type
+                  when :req, :opt, :keyreq, :key then tp.binding.local_variable_get(param_name)
+                  else nil
+                  end
+          [param_type, param_name, value]
+        rescue NameError
+          [param_type, param_name, nil]
+        end
+      end
+    end
+  end
+
+  class << self
+    def catch(&block)
+      events = TreeBuilder.new(&block).build
+      events.each { |event| puts event }
+      nil # Return nil to avoid polluting IRB/Pry output
+    end
+  end
+end
