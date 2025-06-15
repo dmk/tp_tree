@@ -157,6 +157,11 @@ module TPTree
       Curses.init_pair(Curses::COLOR_MAGENTA, Curses::COLOR_MAGENTA, Curses::COLOR_BLACK)
       Curses.init_pair(Curses::COLOR_CYAN, Curses::COLOR_CYAN, Curses::COLOR_BLACK)
       Curses.init_pair(Curses::COLOR_WHITE, Curses::COLOR_WHITE, Curses::COLOR_BLACK)
+
+      # Status bar color pairs with default background
+      Curses.init_pair(8, Curses::COLOR_WHITE, Curses::COLOR_BLACK)
+      Curses.init_pair(9, Curses::COLOR_GREEN, Curses::COLOR_BLACK)    # class name: green
+      Curses.init_pair(10, Curses::COLOR_YELLOW, Curses::COLOR_BLACK)  # method name: yellow
     end
 
     def prepare_lines
@@ -290,36 +295,118 @@ module TPTree
       return unless actual_index
 
       node = @tree[actual_index]
-      status_parts = []
 
-      # Class and method
-      if node.defined_class
+      # Build method signature
+      method_signature = if node.defined_class
         class_name, separator = format_class_and_separator(node.defined_class)
-        status_parts << "#{class_name}#{separator}#{node.method_name}"
+        "#{class_name}#{separator}#{node.method_name}"
       else
-        status_parts << node.method_name.to_s
+        node.method_name.to_s
       end
 
-      # File and line
-      if node.path && node.lineno
+      # Build location info
+      location_info = if node.path && node.lineno
         filename = File.basename(node.path)
-        status_parts << "#{filename}:#{node.lineno}"
+        "#{filename}:#{node.lineno}"
+      else
+        ""
       end
 
-      # Add navigation info
-      status_parts << "#{@cursor_pos + 1}/#{@visible_lines.size}"
+      # Create a status bar with method on left, file on right
+      status_bar_width = @stdscr.maxx
+      padding = 2
 
-      # Add expand/collapse hint
-      if has_children?(actual_index)
-        hint = is_expanded?(actual_index) ? "Space: collapse" : "Space: expand"
-        status_parts << hint
+      # Calculate available space for content
+      left_padding = " " * padding
+      right_padding = " " * padding
+
+      # Calculate middle spacing
+      used_space = left_padding.length + method_signature.length + location_info.length + right_padding.length
+      available_space = status_bar_width - used_space
+
+      # Handle overflow by truncating the method signature
+      if available_space < 0
+        max_method_length = status_bar_width - location_info.length - (padding * 2) - 3 # 3 for "..."
+        if max_method_length > 0
+          method_signature = method_signature[0, max_method_length] + "..."
+          available_space = status_bar_width - left_padding.length - method_signature.length - location_info.length - right_padding.length
+        else
+          # Extreme case: just show truncated method, no file info
+          method_signature = method_signature[0, status_bar_width - (padding * 2) - 3] + "..."
+          location_info = ""
+          available_space = 0
+        end
       end
 
-      status_text = status_parts.join(' | ')
-      @stdscr.attron(Curses::A_REVERSE)
-      @stdscr.setpos(@stdscr.maxy - 1, 0)
-      @stdscr.addstr(status_text.ljust(@stdscr.maxx))
-      @stdscr.attroff(Curses::A_REVERSE)
+      # Calculate middle spacing
+      middle_spacing = available_space > 0 ? " " * available_space : ""
+
+      # Start drawing from left
+      x = 0
+      white_pair = Curses.color_pair(8)
+
+      # Draw left padding in white
+      @stdscr.attron(white_pair)
+      @stdscr.setpos(@stdscr.maxy - 1, x)
+      @stdscr.addstr(left_padding)
+      x += left_padding.length
+      @stdscr.attroff(white_pair)
+
+      # Split method_signature into class/sep/method if separator present
+      class_part, sep, method_part = method_signature.rpartition(/[.#]/)
+      if sep.empty?
+        # Fallback: no separator found
+        class_part = ""
+        sep = ""
+        method_part = method_signature
+      end
+
+      # Class name in green
+      green_pair = Curses.color_pair(9)
+      unless class_part.empty?
+        @stdscr.attron(green_pair)
+        @stdscr.setpos(@stdscr.maxy - 1, x)
+        @stdscr.addstr(class_part)
+        @stdscr.attroff(green_pair)
+        x += class_part.length
+      end
+
+      # Separator in white
+      unless sep.empty?
+        @stdscr.attron(white_pair)
+        @stdscr.setpos(@stdscr.maxy - 1, x)
+        @stdscr.addstr(sep)
+        @stdscr.attroff(white_pair)
+        x += sep.length
+      end
+
+      # Method name in yellow
+      yellow_pair = Curses.color_pair(10)
+      @stdscr.attron(yellow_pair)
+      @stdscr.setpos(@stdscr.maxy - 1, x)
+      @stdscr.addstr(method_part)
+      @stdscr.attroff(yellow_pair)
+      x += method_part.length
+
+      # Middle spacing in white
+      @stdscr.attron(white_pair)
+      @stdscr.setpos(@stdscr.maxy - 1, x)
+      @stdscr.addstr(middle_spacing)
+      @stdscr.attroff(white_pair)
+      x += middle_spacing.length
+
+      # Location info in white
+      @stdscr.attron(white_pair)
+      @stdscr.setpos(@stdscr.maxy - 1, x)
+      @stdscr.addstr(location_info)
+      @stdscr.attroff(white_pair)
+      x += location_info.length
+
+      # Right padding in white
+      @stdscr.attron(white_pair)
+      @stdscr.setpos(@stdscr.maxy - 1, x)
+      @stdscr.addstr(right_padding)
+      @stdscr.attroff(white_pair)
     end
 
     def format_class_and_separator(klass)
