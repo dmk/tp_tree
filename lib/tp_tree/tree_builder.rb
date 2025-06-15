@@ -41,7 +41,10 @@ module TPTree
         method_name: tp.callee_id,
         parameters: param_values,
         depth: @call_depth,
-        event_index: @events.length
+        event_index: @events.length,
+        defined_class: tp.defined_class,
+        path: tp.path,
+        lineno: tp.lineno
       }
       @call_stack.push(call_info)
       @events << nil # Placeholder
@@ -55,10 +58,37 @@ module TPTree
       has_children = @events.length > call_info[:event_index] + 1
 
       if has_children
-        @events[call_info[:event_index]] = TreeNode.new(:call, call_info[:method_name], call_info[:parameters], nil, call_info[:depth])
-        @events << TreeNode.new(:return, tp.callee_id, nil, tp.return_value, @call_depth)
+        @events[call_info[:event_index]] = TreeNode.new(
+          :call,
+          call_info[:method_name],
+          call_info[:parameters],
+          nil,
+          call_info[:depth],
+          call_info[:defined_class],
+          call_info[:path],
+          call_info[:lineno]
+        )
+        @events << TreeNode.new(
+          :return,
+          tp.callee_id,
+          nil,
+          tp.return_value,
+          @call_depth,
+          tp.defined_class,
+          tp.path,
+          tp.lineno
+        )
       else
-        @events[call_info[:event_index]] = TreeNode.new(:call_return, call_info[:method_name], call_info[:parameters], tp.return_value, call_info[:depth])
+        @events[call_info[:event_index]] = TreeNode.new(
+          :call_return,
+          call_info[:method_name],
+          call_info[:parameters],
+          tp.return_value,
+          call_info[:depth],
+          call_info[:defined_class],
+          call_info[:path],
+          call_info[:lineno]
+        )
       end
     end
 

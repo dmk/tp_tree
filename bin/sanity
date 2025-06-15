@@ -5,6 +5,6 @@ require 'tp_tree'
 require 'rubygems'
 
 puts "Tracing Gem.configuration..."
-TPTree.catch do
+TPTree.catch(interactive: true) do
   Gem.configuration
 end

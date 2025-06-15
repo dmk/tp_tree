@@ -1,0 +1,23 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+$LOAD_PATH.unshift(File.expand_path('../lib', __dir__))
+require 'tp_tree'
+
+if ARGV.empty?
+  puts "Usage: tp_tree [--interactive] <ruby_file>"
+  exit 1
+end
+
+interactive = ARGV.delete('--interactive')
+file = ARGV.first
+
+unless File.exist?(file)
+  puts "Error: File '#{file}' not found"
+  exit 1
+end
+
+code = File.read(file)
+TPTree.catch(interactive: interactive) do
+  eval(code, TOPLEVEL_BINDING, file)
+end
