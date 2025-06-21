@@ -11,6 +11,8 @@ module TPTree
 
     def initialize(tree)
       @tree = tree
+      @original_tree = tree  # Keep reference to original tree for navigation
+      @tree_stack = []       # Stack to track zoom levels
       @lines = []
       @visible_lines = []
       @scroll_pos = 0
@@ -96,7 +98,7 @@ module TPTree
       end
     end
 
-        def should_show_node?(index)
+    def should_show_node?(index)
       # Always show root level nodes
       return true if @tree[index].depth == 0
 
@@ -304,7 +306,13 @@ module TPTree
         node.method_name.to_s
       end
 
-      # Build location info
+      # Add zoom level indicator
+      if @tree_stack.any?
+        zoom_indicator = " [#{@tree_stack.size + 1}]"
+        method_signature += zoom_indicator
+      end
+
+            # Build location info
       location_info = if node.path && node.lineno
         filename = File.basename(node.path)
         "#{filename}:#{node.lineno}"
@@ -440,27 +448,192 @@ module TPTree
         move_up
       when Curses::KEY_DOWN, 'j'
         move_down
-      when ' ', Curses::KEY_ENTER, 10, 13  # Space, Enter, or Return
-        toggle_current_node
+      when Curses::KEY_RIGHT, 'l'
+        expand_current_node
+      when Curses::KEY_LEFT, 'h'
+        collapse_current_node
+      when Curses::KEY_ENTER, 10, 13  # Enter key
+        enter_current_call
       when 'T'
         collapse_all
       when 't'
         expand_all
+      when 'b'  # Back - go up one level in the call stack
+        go_back
       when 'q'
         exit
       end
     end
 
-    def toggle_current_node
+    def expand_current_node
       return if @visible_lines.empty?
 
       actual_index = @visible_lines[@cursor_pos]
-      toggle_expansion(actual_index)
-
-      # If we collapsed and cursor is beyond visible lines, adjust
-      if @cursor_pos >= @visible_lines.size
-        @cursor_pos = [@visible_lines.size - 1, 0].max
+      if has_children?(actual_index) && !is_expanded?(actual_index)
+        @expanded_nodes.add(actual_index)
+        update_visible_lines
       end
+    end
+
+    def collapse_current_node
+      return if @visible_lines.empty?
+
+      actual_index = @visible_lines[@cursor_pos]
+      if has_children?(actual_index) && is_expanded?(actual_index)
+        @expanded_nodes.delete(actual_index)
+        update_visible_lines
+
+        # If we collapsed and cursor is beyond visible lines, adjust
+        if @cursor_pos >= @visible_lines.size
+          @cursor_pos = [@visible_lines.size - 1, 0].max
+        end
+      end
+    end
+
+    def enter_current_call
+      return if @visible_lines.empty?
+
+      actual_index = @visible_lines[@cursor_pos]
+      current_node = @tree[actual_index]
+
+      # Only allow entering calls that have children
+      return unless has_children?(actual_index)
+
+      # Save current state to stack (including computed state to avoid recomputation)
+      @tree_stack.push({
+        tree: @tree,
+        expanded_nodes: @expanded_nodes.dup,
+        cursor_pos: @cursor_pos,
+        scroll_pos: @scroll_pos,
+        node_children: @node_children.dup,
+        lines: @lines.dup,
+        visible_lines: @visible_lines.dup
+      })
+
+      # Create new filtered tree starting from the selected call
+      new_tree = extract_subtree(actual_index)
+      return if new_tree.empty?
+
+      # Update tree and reset state
+      @tree = new_tree
+      @expanded_nodes = Set.new
+      @node_children = {}
+      @cursor_pos = 0
+      @scroll_pos = 0
+
+      # Rebuild tree structure and expand all
+      analyze_tree_structure
+      expand_all_initially
+      prepare_lines
+      update_visible_lines
+    end
+
+    def go_back
+      return if @tree_stack.empty?
+
+      # Restore previous state (including computed state to avoid expensive recomputation)
+      previous_state = @tree_stack.pop
+      @tree = previous_state[:tree]
+      @expanded_nodes = previous_state[:expanded_nodes]
+      @cursor_pos = previous_state[:cursor_pos]
+      @scroll_pos = previous_state[:scroll_pos]
+      @node_children = previous_state[:node_children] || {}
+      @lines = previous_state[:lines] || []
+      @visible_lines = previous_state[:visible_lines] || []
+
+      # Only rebuild if cached state is missing (for backward compatibility)
+      if @node_children.empty? || @lines.empty?
+        analyze_tree_structure
+        prepare_lines
+        update_visible_lines
+      end
+    end
+
+        def extract_subtree(root_index)
+      return [] unless has_children?(root_index)
+
+      root_node = @tree[root_index]
+      children_indices = @node_children[root_index]
+
+      # Create new tree with adjusted depths
+      new_tree = []
+      root_depth = root_node.depth
+
+      # Add the root call
+      new_tree << TreeNode.new(
+        root_node.event,
+        root_node.method_name,
+        root_node.parameters,
+        root_node.return_value,
+        0,  # New root starts at depth 0
+        root_node.defined_class,
+        root_node.path,
+        root_node.lineno,
+        root_node.start_time,
+        root_node.end_time
+      )
+
+      # Add all children with adjusted depths
+      children_indices.each do |child_index|
+        child_node = @tree[child_index]
+        new_depth = child_node.depth - root_depth
+
+        new_tree << TreeNode.new(
+          child_node.event,
+          child_node.method_name,
+          child_node.parameters,
+          child_node.return_value,
+          new_depth,
+          child_node.defined_class,
+          child_node.path,
+          child_node.lineno,
+          child_node.start_time,
+          child_node.end_time
+        )
+      end
+
+      # Find and add the return event for the root call
+      return_index = find_matching_return(root_index)
+      if return_index
+        return_node = @tree[return_index]
+        new_tree << TreeNode.new(
+          return_node.event,
+          return_node.method_name,
+          return_node.parameters,
+          return_node.return_value,
+          0,  # Return at same depth as root call
+          return_node.defined_class,
+          return_node.path,
+          return_node.lineno,
+          return_node.start_time,
+          return_node.end_time
+        )
+      end
+
+      new_tree
+    end
+
+        def find_matching_return(call_index)
+      root_node = @tree[call_index]
+      return nil if root_node.event != :call
+
+      # Look for the return event at the same depth with the same method name
+      # It should come after all the children
+      children_indices = @node_children[call_index]
+      search_start = children_indices.any? ? children_indices.max + 1 : call_index + 1
+
+      (search_start...@tree.length).each do |i|
+        node = @tree[i]
+        if node.event == :return &&
+           node.method_name == root_node.method_name &&
+           node.depth == root_node.depth  # Return events are at the same depth as their call
+          return i
+        end
+        # Stop if we encounter a node at a shallower depth (we've gone too far)
+        break if node.depth < root_node.depth
+      end
+
+      nil
     end
 
     def expand_all
