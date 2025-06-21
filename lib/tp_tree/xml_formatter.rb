@@ -7,6 +7,20 @@ module TPTree
       "<#{color}>#{text}</#{color}>"
     end
 
+    def format_timing(duration)
+      return '' if duration.nil?
+
+      formatted_time = if duration < 0.001
+        "#{(duration * 1_000_000).round(1)}μs"
+      elsif duration < 1.0
+        "#{(duration * 1000).round(1)}ms"
+      else
+        "#{duration.round(3)}s"
+      end
+
+      colorize(" [#{formatted_time}]", :cyan)
+    end
+
     def format_parameters(parameters)
       return '' if parameters.nil? || parameters.empty?
 

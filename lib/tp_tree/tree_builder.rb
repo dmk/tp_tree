@@ -42,6 +42,7 @@ module TPTree
       end
 
       param_values = extract_parameters(tp)
+      call_time = Time.now
 
       call_info = {
         method_name: tp.callee_id,
@@ -50,7 +51,8 @@ module TPTree
         event_index: @events.length,
         defined_class: tp.defined_class,
         path: tp.path,
-        lineno: tp.lineno
+        lineno: tp.lineno,
+        start_time: call_time
       }
       @call_stack.push(call_info)
       @events << nil # Placeholder
@@ -67,6 +69,7 @@ module TPTree
 
       @call_depth -= 1
       call_info = @call_stack.pop
+      return_time = Time.now
 
       has_children = @events.length > call_info[:event_index] + 1
 
@@ -79,7 +82,9 @@ module TPTree
           call_info[:depth],
           call_info[:defined_class],
           call_info[:path],
-          call_info[:lineno]
+          call_info[:lineno],
+          call_info[:start_time],
+          return_time
         )
         @events << TreeNode.new(
           :return,
@@ -89,7 +94,9 @@ module TPTree
           @call_depth,
           tp.defined_class,
           tp.path,
-          tp.lineno
+          tp.lineno,
+          call_info[:start_time],
+          return_time
         )
       else
         @events[call_info[:event_index]] = TreeNode.new(
@@ -100,7 +107,9 @@ module TPTree
           call_info[:depth],
           call_info[:defined_class],
           call_info[:path],
-          call_info[:lineno]
+          call_info[:lineno],
+          call_info[:start_time],
+          return_time
         )
       end
     end

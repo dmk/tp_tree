@@ -7,9 +7,9 @@ module TPTree
   class TreeNode
     include Formatter
 
-    attr_reader :event, :method_name, :parameters, :return_value, :depth, :defined_class, :path, :lineno
+    attr_reader :event, :method_name, :parameters, :return_value, :depth, :defined_class, :path, :lineno, :start_time, :end_time
 
-    def initialize(event, method_name, parameters = nil, return_value = nil, depth = 0, defined_class = nil, path = nil, lineno = nil)
+    def initialize(event, method_name, parameters = nil, return_value = nil, depth = 0, defined_class = nil, path = nil, lineno = nil, start_time = nil, end_time = nil)
       @event = event
       @method_name = method_name
       @parameters = parameters
@@ -18,20 +18,28 @@ module TPTree
       @defined_class = defined_class
       @path = path
       @lineno = lineno
+      @start_time = start_time
+      @end_time = end_time
+    end
+
+    def duration
+      return nil unless @start_time && @end_time
+      @end_time - @start_time
     end
 
     def to_s(formatter: self)
       prefix = build_prefix(formatter: formatter)
       color = formatter.color_for_depth(depth)
       colored_method_name = formatter.colorize(@method_name, color)
+      timing_info = formatter.format_timing(duration)
 
       case @event
       when :call
-        "#{prefix}#{colored_method_name}(#{formatter.format_parameters(@parameters)})"
+        "#{prefix}#{colored_method_name}(#{formatter.format_parameters(@parameters)})#{timing_info}"
       when :return
-        "#{prefix}#{formatter.format_return_value(@return_value)}"
+        "#{prefix}#{formatter.format_return_value(@return_value)}#{timing_info}"
       when :call_return
-        "#{prefix}#{colored_method_name}(#{formatter.format_parameters(@parameters)}) → #{formatter.format_return_value(@return_value)}"
+        "#{prefix}#{colored_method_name}(#{formatter.format_parameters(@parameters)}) → #{formatter.format_return_value(@return_value)}#{timing_info}"
       end
     end
 
@@ -39,14 +47,15 @@ module TPTree
       prefix_parts = build_prefix_parts(formatter: formatter)
       color = formatter.color_for_depth(depth)
       colored_method_name = formatter.colorize(@method_name, color)
+      timing_info = formatter.format_timing(duration)
 
       content = case @event
                 when :call
-                  "#{colored_method_name}(#{formatter.format_parameters(@parameters)})"
+                  "#{colored_method_name}(#{formatter.format_parameters(@parameters)})#{timing_info}"
                 when :return
-                  "#{formatter.format_return_value(@return_value)}"
+                  "#{formatter.format_return_value(@return_value)}#{timing_info}"
                 when :call_return
-                  "#{colored_method_name}(#{formatter.format_parameters(@parameters)}) → #{formatter.format_return_value(@return_value)}"
+                  "#{colored_method_name}(#{formatter.format_parameters(@parameters)}) → #{formatter.format_return_value(@return_value)}#{timing_info}"
                 end
       [prefix_parts, content]
     end
