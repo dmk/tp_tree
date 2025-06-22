@@ -27,6 +27,22 @@ module TPTree
       @end_time - @start_time
     end
 
+    def to_hash
+      {
+        event: @event,
+        method_name: @method_name,
+        parameters: serialize_parameters(@parameters),
+        return_value: serialize_value(@return_value),
+        depth: @depth,
+        defined_class: @defined_class&.to_s,
+        path: @path,
+        lineno: @lineno,
+        start_time: @start_time&.to_f,
+        end_time: @end_time&.to_f,
+        duration: duration
+      }
+    end
+
     def to_s(formatter: self)
       prefix = build_prefix(formatter: formatter)
       color = formatter.color_for_depth(depth)
@@ -61,6 +77,32 @@ module TPTree
     end
 
     private
+
+    def serialize_parameters(parameters)
+      return nil unless parameters
+      parameters.map { |param_type, param_name, param_value|
+        {
+          type: param_type,
+          name: param_name,
+          value: serialize_value(param_value)
+        }
+      }
+    end
+
+    def serialize_value(value)
+      case value
+      when String, Symbol, NilClass, TrueClass, FalseClass, Numeric
+        value
+      when Array
+        value.map { |v| serialize_value(v) }
+      when Hash
+        value.transform_values { |v| serialize_value(v) }
+      when Proc
+        'Proc'
+      else
+        value.inspect
+      end
+    end
 
     def build_prefix_parts(formatter: self)
       parts = []
