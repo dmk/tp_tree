@@ -30,23 +30,22 @@ RSpec.describe TPTree do
       output = $stdout.string
       $stdout = original_stdout
 
-      # This is the expected output, without color.
-      # The structure should be a call to method_a, which contains call_returns for b and c,
+      # Remove color codes and timing information for comparison
+      uncolored_output = output.gsub(/\e\[\d+m/, '').gsub(/\s\[\d+\.\d+[μms]+\]/, '')
+
+      # The expected structure should be a call to method_a, which contains call_returns for b and c,
       # and then the return for a.
-      expected_output = <<~OUTPUT
-        method_a()
-        │  method_b(x = 5) → 10
-        │  method_c() → nil
-        └→ nil
-      OUTPUT
+      expected_lines = [
+        'method_a()',
+        '│  method_b(x = 5) → 10',
+        '│  method_c() → nil',
+        '└→ nil'
+      ]
 
-      uncolored_output = output.gsub(/\e\[\d+m/, '')
+      actual_lines = uncolored_output.lines.map(&:rstrip)
 
-      # Normalize line endings and remove trailing whitespace
-      cleaned_output = uncolored_output.lines.map(&:rstrip).join("\n")
-      cleaned_expected_output = expected_output.lines.map(&:rstrip).join("\n")
-
-      expect(cleaned_output).to eq(cleaned_expected_output)
+      # Check structure matches expected
+      expect(actual_lines).to eq(expected_lines)
     end
 
     context 'with filtering' do
