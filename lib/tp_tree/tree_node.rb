@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative 'formatter'
+require_relative 'presenters/tree_node_presenter'
 
 module TPTree
   # TreeNode represents a single event in the method call tree
@@ -44,36 +45,33 @@ module TPTree
     end
 
     def to_s(formatter: self)
-      prefix = build_prefix(formatter: formatter)
-      color = formatter.color_for_depth(depth)
-      colored_method_name = formatter.colorize(@method_name, color)
-      timing_info = formatter.format_timing(duration)
+      # Create appropriate formatter for presenter
+      presenter_formatter = if formatter.respond_to?(:formatter)
+                              formatter.formatter
+                            elsif formatter.respond_to?(:colorize)
+                              formatter
+                            else
+                              # Fallback to default ANSI formatter
+                              Formatters::AnsiFormatter.new
+                            end
 
-      case @event
-      when :call
-        "#{prefix}#{colored_method_name}(#{formatter.format_parameters(@parameters)})#{timing_info}"
-      when :return
-        "#{prefix}#{formatter.format_return_value(@return_value)}#{timing_info}"
-      when :call_return
-        "#{prefix}#{colored_method_name}(#{formatter.format_parameters(@parameters)}) → #{formatter.format_return_value(@return_value)}#{timing_info}"
-      end
+      presenter = Presenters::TreeNodePresenter.new(self, formatter: presenter_formatter)
+      presenter.to_s
     end
 
     def to_parts(formatter: self)
-      prefix_parts = build_prefix_parts(formatter: formatter)
-      color = formatter.color_for_depth(depth)
-      colored_method_name = formatter.colorize(@method_name, color)
-      timing_info = formatter.format_timing(duration)
+      # Create appropriate formatter for presenter
+      presenter_formatter = if formatter.respond_to?(:formatter)
+                              formatter.formatter
+                            elsif formatter.respond_to?(:colorize)
+                              formatter
+                            else
+                              # Fallback to default ANSI formatter
+                              Formatters::AnsiFormatter.new
+                            end
 
-      content = case @event
-                when :call
-                  "#{colored_method_name}(#{formatter.format_parameters(@parameters)})#{timing_info}"
-                when :return
-                  "#{formatter.format_return_value(@return_value)}#{timing_info}"
-                when :call_return
-                  "#{colored_method_name}(#{formatter.format_parameters(@parameters)}) → #{formatter.format_return_value(@return_value)}#{timing_info}"
-                end
-      [prefix_parts, content]
+      presenter = Presenters::TreeNodePresenter.new(self, formatter: presenter_formatter)
+      presenter.to_parts
     end
 
     private
@@ -102,32 +100,6 @@ module TPTree
       else
         value.inspect
       end
-    end
-
-    def build_prefix_parts(formatter: self)
-      parts = []
-      color = formatter.color_for_depth(depth)
-
-      if @event == :return
-        (0...@depth).each do |level|
-          parts << ['│  ', formatter.color_for_depth(level)]
-        end
-        parts << ['└→ ', color]
-        return parts
-      end
-
-      return [] if @depth.zero?
-
-      (0...@depth).each do |level|
-        parts << ['│  ', formatter.color_for_depth(level)]
-      end
-      parts
-    end
-
-    def build_prefix(formatter: self)
-      build_prefix_parts(formatter: formatter).map do |text, color|
-        formatter.colorize(text, color)
-      end.join
     end
   end
 end

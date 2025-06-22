@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative 'tree_node'
+require_relative 'call_stack'
 
 module TPTree
   # TreeBuilder uses TracePoint to build a tree of method calls.
@@ -8,11 +9,13 @@ module TPTree
     attr_reader :events
 
     def initialize(method_filter: nil, &block)
-      @events = []
-      @call_depth = 0
-      @call_stack = []
+      @call_stack = CallStack.new
       @method_filter = method_filter
       @block = block
+    end
+
+    def events
+      @call_stack.events
     end
 
     def build
@@ -30,7 +33,7 @@ module TPTree
       @block.call
       tp.disable
 
-      @events.compact
+      events
     end
 
     private
@@ -44,37 +47,26 @@ module TPTree
       param_values = extract_parameters(tp)
       call_time = Time.now
 
-      call_info = {
-        method_name: tp.callee_id,
-        parameters: param_values,
-        depth: @call_depth,
-        event_index: @events.length,
-        defined_class: tp.defined_class,
-        path: tp.path,
-        lineno: tp.lineno,
-        start_time: call_time
-      }
-      @call_stack.push(call_info)
-      @events << nil # Placeholder
-      @call_depth += 1
+      @call_stack.start_call(
+        tp.callee_id,
+        param_values,
+        tp.defined_class,
+        tp.path,
+        tp.lineno,
+        call_time
+      )
     end
 
-    def handle_return(tp)
-      # If method was filtered out during call, there won't be anything on the stack
-      return if @call_stack.empty?
-
-      # Check if this return matches the last call (in case of nested filtered calls)
-      call_info = @call_stack.last
-      return unless call_info && call_info[:method_name] == tp.callee_id
-
-      @call_depth -= 1
-      call_info = @call_stack.pop
+        def handle_return(tp)
       return_time = Time.now
+      call_info = @call_stack.finish_call(tp.callee_id, tp.return_value, return_time)
 
-      has_children = @events.length > call_info[:event_index] + 1
+      # If call_info is nil, the method was filtered out during call
+      return unless call_info
 
-      if has_children
-        @events[call_info[:event_index]] = TreeNode.new(
+      if call_info[:has_children]
+        # Create separate call and return events
+        call_node = TreeNode.new(
           :call,
           call_info[:method_name],
           call_info[:parameters],
@@ -86,20 +78,26 @@ module TPTree
           call_info[:start_time],
           return_time
         )
-        @events << TreeNode.new(
+
+        return_node = TreeNode.new(
           :return,
           tp.callee_id,
           nil,
           tp.return_value,
-          @call_depth,
+          @call_stack.current_depth,
           tp.defined_class,
           tp.path,
           tp.lineno,
           call_info[:start_time],
           return_time
         )
+
+        # Replace placeholder and add return event
+        @call_stack.set_event_at_index(call_info[:event_index], call_node)
+        @call_stack.add_event(return_node)
       else
-        @events[call_info[:event_index]] = TreeNode.new(
+        # Create single call_return event
+        call_return_node = TreeNode.new(
           :call_return,
           call_info[:method_name],
           call_info[:parameters],
@@ -111,6 +109,9 @@ module TPTree
           call_info[:start_time],
           return_time
         )
+
+        # Replace placeholder
+        @call_stack.set_event_at_index(call_info[:event_index], call_return_node)
       end
     end
 
