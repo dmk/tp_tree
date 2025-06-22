@@ -1,28 +1,130 @@
 # TpTree
 
-TODO: Delete this and the text below, and describe your gem
+A Ruby gem for visualizing method call traces with timing information. TPTree uses Ruby's TracePoint to capture method calls and presents them in a beautiful tree format with execution times, parameters, and return values.
 
-Welcome to your new gem! In this directory, you'll find the files you need to be able to package up your Ruby library into a gem. Put your Ruby code in the file `lib/tp_tree`. To experiment with that code, run `bin/console` for an interactive prompt.
+## Features
+
+- 🌳 **Tree visualization** of method calls with proper indentation
+- ⏱️ **Timing information** for performance analysis
+- 🎯 **Method filtering** to focus on specific methods or classes
+- 📊 **JSON export** for integration with external tools
+- 🎨 **Colorized output** for better readability
+- 🔧 **Multiple output formats** (ANSI and XML)
 
 ## Installation
 
-TODO: Replace `UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG` with your gem name right after releasing it to RubyGems.org. Please do not do it earlier due to security reasons. Alternatively, replace this section with instructions to install your gem from git if you don't plan to release to RubyGems.org.
-
-Install the gem and add to the application's Gemfile by executing:
+Install the gem by executing:
 
 ```bash
-bundle add UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG
+gem install tp_tree
 ```
 
-If bundler is not being used to manage dependencies, install the gem by executing:
+Or add it to your Gemfile:
+
+```ruby
+gem 'tp_tree'
+```
+
+Then execute:
 
 ```bash
-gem install UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG
+bundle install
 ```
 
 ## Usage
 
-TODO: Write usage instructions here
+### Basic Usage
+
+Wrap any code block with `TPTree.catch` to trace method calls:
+
+```ruby
+require 'tp_tree'
+
+def slow_method(n)
+  sleep(0.1)
+  fast_method(n)
+end
+
+def fast_method(n)
+  sleep(0.01)
+  n * 2
+end
+
+TPTree.catch do
+  slow_method(5)
+end
+```
+
+Output:
+```
+slow_method(n = 5) [112.0ms]
+│  fast_method(n = 5) → 10 [11.1ms]
+└→ 10 [112.0ms]
+```
+
+### Method Filtering
+
+Filter methods by name, class, or custom criteria:
+
+```ruby
+# Filter by method name (string or regex)
+TPTree.catch(filter: 'slow_method') do
+  # your code
+end
+
+# Filter by multiple criteria
+TPTree.catch(filter: ['method1', /^User/, SomeClass]) do
+  # your code
+end
+
+# Exclude specific methods
+TPTree.catch(exclude: 'fast_method') do
+  # your code
+end
+
+# Custom filtering with block
+TPTree.catch(filter: ->(call_info) { call_info.method_name.start_with?('api_') }) do
+  # your code
+end
+```
+
+### JSON Export
+
+Export trace data for external analysis:
+
+```ruby
+TPTree.catch(json_file: 'trace.json') do
+  # your code
+end
+```
+
+The JSON file contains structured data with timing, parameters, return values, and call hierarchy.
+
+### Advanced Options
+
+```ruby
+TPTree.catch(
+  filter: 'important_method',     # Method filtering
+  exclude: 'noise_method',        # Method exclusion
+  json_file: 'trace.json',        # JSON export
+  interactive: true               # Interactive viewer (if available)
+) do
+  # your code
+end
+```
+
+## Examples
+
+See the `examples/` directory for complete demonstrations:
+
+- `timing_demo.rb` - Basic timing visualization
+- `interactive_timing_demo.rb` - Interactive viewer demo
+- `semi_empty_nodes_demo.rb` - Complex filtering examples
+
+Run them with:
+```bash
+ruby examples/timing_demo.rb
+```
 
 ## Development
 
@@ -32,7 +134,7 @@ To install this gem onto your local machine, run `bundle exec rake install`. To 
 
 ## Contributing
 
-Bug reports and pull requests are welcome on GitHub at https://github.com/[USERNAME]/tp_tree. This project is intended to be a safe, welcoming space for collaboration, and contributors are expected to adhere to the [code of conduct](https://github.com/[USERNAME]/tp_tree/blob/main/CODE_OF_CONDUCT.md).
+Bug reports and pull requests are welcome on GitHub at https://github.com/dmk/tp_tree. This project is intended to be a safe, welcoming space for collaboration, and contributors are expected to adhere to the [code of conduct](https://github.com/dmk/tp_tree/blob/main/CODE_OF_CONDUCT.md).
 
 ## License
 
@@ -40,4 +142,4 @@ The gem is available as open source under the terms of the [MIT License](https:/
 
 ## Code of Conduct
 
-Everyone interacting in the TpTree project's codebases, issue trackers, chat rooms and mailing lists is expected to follow the [code of conduct](https://github.com/[USERNAME]/tp_tree/blob/main/CODE_OF_CONDUCT.md).
+Everyone interacting in the TpTree project's codebases, issue trackers, chat rooms and mailing lists is expected to follow the [code of conduct](https://github.com/dmk/tp_tree/blob/main/CODE_OF_CONDUCT.md).
