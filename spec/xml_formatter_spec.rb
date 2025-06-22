@@ -1,20 +1,15 @@
 # frozen_string_literal: true
 
 require 'tp_tree'
-require_relative '../lib/tp_tree/xml_formatter'
-
-# Test class to include the XMLFormatter module
-class TestXMLFormatter
-  include TPTree::XMLFormatter
-end
+require_relative '../lib/tp_tree/formatters/xml_formatter'
 
 # Also need the regular formatter for comparison tests
 class TestFormatter
   include TPTree::Formatter
 end
 
-RSpec.describe TPTree::XMLFormatter do
-  let(:formatter) { TestXMLFormatter.new }
+RSpec.describe TPTree::Formatters::XmlFormatter do
+  let(:formatter) { TPTree::Formatters::XmlFormatter.new }
 
   describe '#colorize' do
     it 'wraps text in XML tags' do
@@ -136,7 +131,7 @@ RSpec.describe TPTree::XMLFormatter do
 
   describe '#color_for_depth' do
     it 'cycles through depth colors' do
-      colors = TPTree::XMLFormatter::DEPTH_COLORS
+      colors = TPTree::Formatters::BaseFormatter::DEPTH_COLORS
 
       colors.each_with_index do |color, depth|
         expect(formatter.color_for_depth(depth)).to eq(color)
@@ -144,7 +139,7 @@ RSpec.describe TPTree::XMLFormatter do
     end
 
     it 'cycles back to first color after exhausting all colors' do
-      colors = TPTree::XMLFormatter::DEPTH_COLORS
+      colors = TPTree::Formatters::BaseFormatter::DEPTH_COLORS
       overflow_depth = colors.length
 
       expect(formatter.color_for_depth(overflow_depth)).to eq(colors[0])
@@ -155,11 +150,11 @@ RSpec.describe TPTree::XMLFormatter do
   describe 'DEPTH_COLORS constant' do
     it 'contains expected colors' do
       expected_colors = [:green, :blue, :yellow, :magenta, :cyan, :red]
-      expect(TPTree::XMLFormatter::DEPTH_COLORS).to eq(expected_colors)
+      expect(TPTree::Formatters::BaseFormatter::DEPTH_COLORS).to eq(expected_colors)
     end
 
     it 'is frozen' do
-      expect(TPTree::XMLFormatter::DEPTH_COLORS).to be_frozen
+      expect(TPTree::Formatters::BaseFormatter::DEPTH_COLORS).to be_frozen
     end
   end
 

@@ -2,12 +2,11 @@
 
 require 'curses'
 require 'set'
-require_relative 'xml_formatter'
+require_relative 'formatters/xml_formatter'
 require_relative 'tree_node'
 
 module TPTree
   class InteractiveViewer
-    include XMLFormatter
 
     def initialize(tree)
       @tree = tree
@@ -20,6 +19,7 @@ module TPTree
       @stdscr = Curses.init_screen
       @expanded_nodes = Set.new
       @node_children = {}
+      @formatter = Formatters::XmlFormatter.new
 
       # Initialize all nodes as expanded and build parent-child relationships
       analyze_tree_structure
@@ -168,7 +168,7 @@ module TPTree
 
     def prepare_lines
       @lines = @tree.map do |node|
-        node.to_parts(formatter: self)
+        node.to_parts(formatter: @formatter)
       end
     end
 
