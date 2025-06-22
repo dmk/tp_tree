@@ -93,7 +93,7 @@ end
 Export trace data for external analysis:
 
 ```ruby
-TPTree.catch(json_file: 'trace.json') do
+TPTree.catch(write_to: 'trace.json') do
   # your code
 end
 ```
@@ -106,7 +106,7 @@ The JSON file contains structured data with timing, parameters, return values, a
 TPTree.catch(
   filter: 'important_method',     # Method filtering
   exclude: 'noise_method',        # Method exclusion
-  json_file: 'trace.json',        # JSON export
+  write_to: 'trace.json',         # JSON export
   interactive: true               # Interactive viewer (if available)
 ) do
   # your code
