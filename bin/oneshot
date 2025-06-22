@@ -13,9 +13,12 @@
 #    - Copy and paste the entire TPTree module into your IRB session.
 #    - Then, use it to trace any block of code:
 #      TPTree.catch { Your.code_to_trace }
+#      TPTree.catch(write_to: 'trace.json') { Your.code_to_trace }
 #
 
 module TPTree
+  VERSION = "oneshot"
+
   # Formatter provides methods for colorizing and formatting output.
   module Formatter
     DEPTH_COLORS = [:green, :blue, :yellow, :magenta, :cyan, :red].freeze
@@ -70,10 +73,40 @@ module TPTree
   # TreeNode represents a single event in the method call tree
   class TreeNode
     include Formatter
-    attr_reader :event, :method_name, :parameters, :return_value, :depth
+    attr_reader :event, :method_name, :parameters, :return_value, :depth, :defined_class, :path, :lineno, :start_time, :end_time
 
-    def initialize(event, method_name, parameters = nil, return_value = nil, depth = 0)
-      @event, @method_name, @parameters, @return_value, @depth = event, method_name, parameters, return_value, depth
+    def initialize(event, method_name, parameters = nil, return_value = nil, depth = 0, defined_class = nil, path = nil, lineno = nil, start_time = nil, end_time = nil)
+      @event = event
+      @method_name = method_name
+      @parameters = parameters
+      @return_value = return_value
+      @depth = depth
+      @defined_class = defined_class
+      @path = path
+      @lineno = lineno
+      @start_time = start_time
+      @end_time = end_time
+    end
+
+    def duration
+      return nil unless @start_time && @end_time
+      @end_time - @start_time
+    end
+
+    def to_hash
+      {
+        event: @event,
+        method_name: @method_name,
+        parameters: serialize_parameters(@parameters),
+        return_value: serialize_value(@return_value),
+        depth: @depth,
+        defined_class: @defined_class&.to_s,
+        path: @path,
+        lineno: @lineno,
+        start_time: @start_time&.to_f,
+        end_time: @end_time&.to_f,
+        duration: duration
+      }
     end
 
     def to_s
@@ -88,6 +121,50 @@ module TPTree
     end
 
     private
+
+    def serialize_parameters(parameters)
+      return nil unless parameters
+      parameters.map { |param_type, param_name, param_value|
+        {
+          type: param_type,
+          name: param_name,
+          value: serialize_value(param_value)
+        }
+      }
+    end
+
+    def serialize_value(value)
+      case value
+      when String
+        # Handle binary strings that can't be converted to UTF-8
+        if value.encoding == Encoding::ASCII_8BIT || !value.valid_encoding?
+          # For binary data, show type and size instead of content
+          "[Binary data: #{value.bytesize} bytes]"
+        else
+          value
+        end
+      when Symbol, NilClass, TrueClass, FalseClass, Numeric
+        value
+      when Array
+        value.map { |v| serialize_value(v) }
+      when Hash
+        value.transform_values { |v| serialize_value(v) }
+      when Proc
+        'Proc'
+      else
+        # Safely inspect objects, handling encoding issues
+        begin
+          inspected = value.inspect
+          if inspected.valid_encoding?
+            inspected
+          else
+            "[Object: #{value.class}]"
+          end
+        rescue Encoding::UndefinedConversionError, Encoding::InvalidByteSequenceError
+          "[Object: #{value.class}]"
+        end
+      end
+    end
 
     def build_prefix
       color = color_for_depth(depth)
@@ -127,7 +204,8 @@ module TPTree
         method_name: tp.callee_id,
         parameters: extract_parameters(tp),
         depth: @call_depth,
-        event_index: @events.length
+        event_index: @events.length,
+        start_time: Time.now
       })
       @events << nil
       @call_depth += 1
@@ -136,11 +214,46 @@ module TPTree
     def handle_return(tp)
       @call_depth -= 1
       call_info = @call_stack.pop
+      end_time = Time.now
+
       if @events.length > call_info[:event_index] + 1
-        @events[call_info[:event_index]] = TreeNode.new(:call, call_info[:method_name], call_info[:parameters], nil, call_info[:depth])
-        @events << TreeNode.new(:return, tp.callee_id, nil, tp.return_value, @call_depth)
+        @events[call_info[:event_index]] = TreeNode.new(
+          :call,
+          call_info[:method_name],
+          call_info[:parameters],
+          nil,
+          call_info[:depth],
+          tp.defined_class,
+          tp.path,
+          tp.lineno,
+          call_info[:start_time],
+          nil
+        )
+        @events << TreeNode.new(
+          :return,
+          tp.callee_id,
+          nil,
+          tp.return_value,
+          @call_depth,
+          tp.defined_class,
+          tp.path,
+          tp.lineno,
+          nil,
+          end_time
+        )
       else
-        @events[call_info[:event_index]] = TreeNode.new(:call_return, call_info[:method_name], call_info[:parameters], tp.return_value, call_info[:depth])
+        @events[call_info[:event_index]] = TreeNode.new(
+          :call_return,
+          call_info[:method_name],
+          call_info[:parameters],
+          tp.return_value,
+          call_info[:depth],
+          tp.defined_class,
+          tp.path,
+          tp.lineno,
+          call_info[:start_time],
+          end_time
+        )
       end
     end
 
@@ -161,9 +274,23 @@ module TPTree
   end
 
   class << self
-    def catch(&block)
+    def catch(write_to: nil, &block)
       events = TreeBuilder.new(&block).build
-      events.each { |event| puts event }
+
+      if write_to
+        require 'json'
+        require 'time'
+        json_data = {
+          version: TPTree::VERSION,
+          timestamp: Time.now.strftime('%Y-%m-%dT%H:%M:%S%z'),
+          events: events.map(&:to_hash)
+        }
+        File.write(write_to, JSON.pretty_generate(json_data))
+        puts "Trace data written to: #{write_to}"
+      else
+        events.each { |event| puts event }
+      end
+
       nil # Return nil to avoid polluting IRB/Pry output
     end
   end
