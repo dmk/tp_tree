@@ -89,7 +89,15 @@ module TPTree
 
     def serialize_value(value)
       case value
-      when String, Symbol, NilClass, TrueClass, FalseClass, Numeric
+      when String
+        # Handle binary strings that can't be converted to UTF-8
+        if value.encoding == Encoding::ASCII_8BIT || !value.valid_encoding?
+          # For binary data, show type and size instead of content
+          "[Binary data: #{value.bytesize} bytes]"
+        else
+          value
+        end
+      when Symbol, NilClass, TrueClass, FalseClass, Numeric
         value
       when Array
         value.map { |v| serialize_value(v) }
@@ -98,7 +106,17 @@ module TPTree
       when Proc
         'Proc'
       else
-        value.inspect
+        # Safely inspect objects, handling encoding issues
+        begin
+          inspected = value.inspect
+          if inspected.valid_encoding?
+            inspected
+          else
+            "[Object: #{value.class}]"
+          end
+        rescue Encoding::UndefinedConversionError, Encoding::InvalidByteSequenceError
+          "[Object: #{value.class}]"
+        end
       end
     end
   end
